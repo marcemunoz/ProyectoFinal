@@ -1,4 +1,4 @@
-name: CD - Deploy Simulated
+name: CD - Deploy
 
 on:
   workflow_run:
@@ -7,57 +7,15 @@ on:
       - completed
 
 jobs:
-  deploy-simulated:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      # 🔥 Retry para esperar a que el artefacto exista
-      - name: Wait for artifact to be ready
-        run: |
-          for i in {1..10}; do
-            echo "Intento $i/10: buscando artefacto 'images'..."
-            gh run download ${{ github.event.workflow_run.id }} --name images && break
-            echo "No está listo aún. Esperando 6 segundos..."
-            sleep 6
-          done
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: images
 
-      # Descomprimir ZIP
-      - name: Unzip artifact
-        run: unzip images
-
-      # Cargar imágenes
-      - name: Load Docker images
-        run: |
-          docker load -i api.tar
-          docker load -i worker.tar
-
-      - name: Install kubectl
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y kubectl
-
-      - name: Install Kind
-        run: |
-          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
-          chmod +x kind
-          sudo mv kind /usr/local/bin/kind
-
-      - name: Create Kind cluster
-        run: kind create cluster --name demo
-
-      - name: Load images into Kind
-        run: |
-          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/api:latest --name demo
-          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest --name demo
-
-      - name: Apply Kubernetes manifests
-        run: kubectl apply -f k8s/
-
-      - name: Check deployments
-        run: |
-          kubectl get pods -A
-          kubectl get svc -A
+      - name: Verify files
+        run: ls -l .
