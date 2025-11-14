@@ -1,6 +1,12 @@
+# Base
 FROM python:3.11-slim
-WORKDIR /app
+
+WORKDIR /worker
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY app.py .
-CMD ["python", "app.py"]
+
+COPY . .
+
+# No necesita puerto, solo corre procesos internos
+CMD ["python", "worker.py"]
