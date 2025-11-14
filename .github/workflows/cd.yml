@@ -32,13 +32,8 @@ jobs:
       - name: Aplicar manifiestos Kubernetes
         run: |
           kubectl apply -f k8s/api-deployment.yaml
-          kubectl apply -f k8s/service.yaml
+          kubectl apply -f k8s/api-service.yaml
           kubectl apply -f k8s/worker-deployment.yaml
-
-      - name: Esperar pods
-        run: |
-          kubectl wait --for=condition=ready pod -l app=api --timeout=120s
-          kubectl wait --for=condition=ready pod -l app=worker --timeout=120s
 
       - name: Capturar evidencias del cluster
         run: |
