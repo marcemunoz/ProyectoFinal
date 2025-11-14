@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y kubectl unzip wget jq pandoc
+          sudo apt-get install -y kubectl unzip wget jq wkhtmltopdf
 
       # 4. Instalar Kind
       - name: Install Kind
@@ -75,7 +75,7 @@ jobs:
           kubectl get pods -A
           kubectl get svc -A
 
-      # 12. Generar PDF con todas las evidencias
+      # 12. Generar PDF con todas las evidencias usando wkhtmltopdf
       - name: Generate Deployment Evidence PDF
         run: |
           cat <<EOF > evidence.md
@@ -97,7 +97,7 @@ jobs:
           \`\`\`
           EOF
 
-          pandoc evidence.md -o deployment_evidence.pdf
+          wkhtmltopdf evidence.md deployment_evidence.pdf
 
       # 13. Subir PDF como artefacto
       - name: Upload PDF Evidence
