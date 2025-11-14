@@ -146,11 +146,6 @@ jobs:
           \`\`\`
           $(cat ngrok_api_response.txt || echo "No response captured")
           \`\`\`
-
-          ## 6. Logs recientes del pod API
-          \`\`\`
-          $(kubectl logs -l app=api | head -n 50)
-          \`\`\`
           EOF
 
           pandoc evidence.md -o deployment_evidence.pdf
