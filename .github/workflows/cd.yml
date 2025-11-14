@@ -25,7 +25,7 @@ jobs:
       - name: Install kubectl
         run: |
           sudo apt-get update
-          sudo apt-get install -y kubectl
+          sudo apt-get install -y kubectl unzip wget
 
       # 4. Instalar Kind
       - name: Install Kind
@@ -54,7 +54,29 @@ jobs:
       - name: Apply Kubernetes manifests
         run: kubectl apply -f k8s/
 
-      # 9. Guardar snapshot del cluster como artefacto
+      # 9. Instalar ngrok
+      - name: Install ngrok
+        run: |
+          wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip
+          unzip ngrok-stable-linux-amd64.zip
+          chmod +x ngrok
+          sudo mv ngrok /usr/local/bin/ngrok
+
+      # 10. Exponer servicio API con ngrok
+      - name: Expose API service with ngrok
+        run: |
+          # Encuentra el NodePort del servicio
+          NODE_PORT=$(kubectl get svc api-service -o=jsonpath='{.spec.ports[0].nodePort}')
+          echo "API NodePort: $NODE_PORT"
+
+          # Inicia ngrok en background y obtiene la URL pública
+          nohup ngrok http $NODE_PORT --log=stdout > ngrok.log 2>&1 &
+          sleep 5
+          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          echo "API accessible at: $NGROK_URL"
+          echo "NGROK_URL=$NGROK_URL" >> $GITHUB_ENV
+
+      # 11. Guardar snapshot del cluster como artefacto
       - name: Save cluster snapshot
         run: |
           mkdir -p cluster_snapshot
@@ -68,7 +90,7 @@ jobs:
           name: cluster-snapshot
           path: cluster_snapshot/
 
-      # 10. Revisar pods y servicios en los logs del workflow
+      # 12. Revisar pods y servicios en los logs del workflow
       - name: Check deployments
         run: |
           kubectl get pods -A
