@@ -1,98 +1,107 @@
-name: CD - Deploy to Kind
+name: CD - Deploy Simulated (no expose)
 
 on:
-  push:
-    branches: [ main ]
+  workflow_run:
+    workflows: ["CI - Build & Test"]
+    types:
+      - completed
 
 jobs:
-  deploy:
+  deploy-simulated:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Checkout
-      - name: Checkout repo
-        uses: actions/checkout@v4
+      # 1. Descargar repositorio
+      - uses: actions/checkout@v4
 
-      # 2. Instalar Kind + kubectl
-      - name: Instalar Kind y kubectl
-        run: |
-          sudo curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
-          sudo chmod +x /usr/local/bin/kind
+      # 2. Login en Docker Hub
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-          sudo curl -Lo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl
-          sudo chmod +x /usr/local/bin/kubectl
-
-      # 3. Crear cluster
-      - name: Crear cluster Kind
-        run: |
-          kind create cluster --name proyectofinal
-
-      # 4. Cargar imágenes locales al cluster
-      - name: Cargar imagen API al cluster
-        run: |
-          docker pull marcemo123/api:latest
-          kind load docker-image marcemo123/api:latest --name proyectofinal
-
-      - name: Cargar imagen Worker al cluster
-        run: |
-          docker pull marcemo123/worker:latest
-          kind load docker-image marcemo123/worker:latest --name proyectofinal
-
-      # 5. Aplicar Deployments y Services
-      - name: Aplicar manifiestos Kubernetes
-        run: |
-          kubectl apply -f k8s/
-        
-
-      # 6. Esperar a que todos los pods estén listos
-      - name: Esperar pods
-        run: |
-          kubectl wait --for=condition=ready pod -l app=api --timeout=120s
-          kubectl wait --for=condition=ready pod -l app=worker --timeout=120s
-
-      # 7. Capturar evidencias
-      - name: Capturar evidencias del cluster
-        run: |
-          mkdir -p cluster_snapshot
-          kubectl get pods -o wide > cluster_snapshot/pods.txt
-          kubectl get svc -o wide > cluster_snapshot/services.txt
-          kubectl get deployments -o wide > cluster_snapshot/deployments.txt
-          kubectl describe pod -l app=api > cluster_snapshot/api_describe.txt
-          kubectl describe pod -l app=worker > cluster_snapshot/worker_describe.txt
-
-      # 8. Instalar weasyprint para PDF
-      - name: Instalar weasyprint
+      # 3. Instalar herramientas necesarias
+      - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y weasyprint
+          sudo apt-get install -y kubectl unzip wget jq wkhtmltopdf
 
-      # 9. Crear PDF de evidencias
-      - name: Crear PDF con evidencias
+      # 4. Instalar Kind
+      - name: Install Kind
         run: |
-          cat <<EOF > evidence.html
-          <h1 style="font-family: sans-serif;">🚀 Evidencia de Despliegue</h1>
+          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
 
-          <h2>1. Pods</h2>
-          <pre>$(cat cluster_snapshot/pods.txt)</pre>
+      # 5. Crear cluster Kind
+      - name: Create Kind cluster
+        run: kind create cluster --name demo
 
-          <h2>2. Servicios</h2>
-          <pre>$(cat cluster_snapshot/services.txt)</pre>
+      # 6. Pull de imágenes desde Docker Hub
+      - name: Pull Docker images
+        run: |
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/api:latest
+          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest
 
-          <h2>3. Deployments</h2>
-          <pre>$(cat cluster_snapshot/deployments.txt)</pre>
+      # 7. Cargar imágenes en Kind
+      - name: Load images into Kind
+        run: |
+          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/api:latest --name demo
+          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest --name demo
 
-          <h2>4. API - Describe</h2>
-          <pre>$(cat cluster_snapshot/api_describe.txt)</pre>
+      # 8. Aplicar manifests Kubernetes
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -f k8s/
 
-          <h2>5. Worker - Describe</h2>
-          <pre>$(cat cluster_snapshot/worker_describe.txt)</pre>
-          EOF
+      # 9. Guardar snapshot del cluster
+      - name: Save cluster snapshot
+        run: |
+          mkdir -p cluster_snapshot
+          kubectl get pods -A -o wide > cluster_snapshot/pods.txt
+          kubectl get svc -A -o wide > cluster_snapshot/services.txt
+          kubectl get deployments -A -o wide > cluster_snapshot/deployments.txt
 
-          weasyprint evidence.html deployment_evidence.pdf
-
-      # 10. Guardar PDF como artefacto
-      - name: Subir PDF
+      # 10. Subir snapshot como artefactos
+      - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: evidencia-despliegue
+          name: cluster-info
+          path: cluster_snapshot/
+
+      # 11. Revisar pods y servicios en los logs
+      - name: Check deployments
+        run: |
+          kubectl get pods -A
+          kubectl get svc -A
+
+      # 12. Generar PDF con todas las evidencias usando wkhtmltopdf
+      - name: Generate Deployment Evidence PDF
+        run: |
+          cat <<EOF > evidence.md
+          # 🚀 Evidencia de Despliegue
+
+          ## 1. Pods
+          \`\`\`
+          $(cat cluster_snapshot/pods.txt)
+          \`\`\`
+
+          ## 2. Servicios
+          \`\`\`
+          $(cat cluster_snapshot/services.txt)
+          \`\`\`
+
+          ## 3. Deployments
+          \`\`\`
+          $(cat cluster_snapshot/deployments.txt)
+          \`\`\`
+          EOF
+
+          wkhtmltopdf evidence.md deployment_evidence.pdf
+
+      # 13. Subir PDF como artefacto
+      - name: Upload PDF Evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: deployment-pdf
           path: deployment_evidence.pdf
