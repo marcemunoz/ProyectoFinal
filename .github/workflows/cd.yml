@@ -1,4 +1,4 @@
-name: CD - Deploy Simulated with ngrok port-forward
+name: CD - Deploy Simulated (no expose)
 
 on:
   workflow_run:
@@ -54,53 +54,7 @@ jobs:
       - name: Apply Kubernetes manifests
         run: kubectl apply -f k8s/
 
-      # 9. Instalar ngrok
-      - name: Install ngrok
-        run: |
-          wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip
-          unzip ngrok-stable-linux-amd64.zip
-          chmod +x ngrok
-          sudo mv ngrok /usr/local/bin/ngrok
-
-      # 10. Port-forward API y exponer con ngrok (corrección)
-      - name: Expose API pod with ngrok
-        run: |
-          # Esperar a que el pod esté listo
-          kubectl wait --for=condition=ready pod -l app=api --timeout=120s
-
-          # Encontrar pod de API
-          API_POD=$(kubectl get pods -l app=api -o jsonpath='{.items[0].metadata.name}')
-          echo "API Pod: $API_POD"
-
-          # Port-forward del pod a localhost
-          kubectl port-forward $API_POD 5000:5000 &>/dev/null &
-          sleep 5
-
-          # Iniciar ngrok en background
-          nohup ngrok http 5000 --log=stdout > ngrok.log 2>&1 &
-          sleep 7
-
-          # Esperar hasta que ngrok tenga URL pública
-          for i in {1..20}; do
-            NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-            if [ -n "$NGROK_URL" ] && [ "$NGROK_URL" != "null" ]; then
-              break
-            fi
-            sleep 3
-          done
-
-          if [ -z "$NGROK_URL" ] || [ "$NGROK_URL" = "null" ]; then
-            echo "❌ No se pudo obtener la URL de ngrok"
-            exit 1
-          fi
-
-          # Mostrar mensaje de éxito
-          echo "API Microservicio funcionando! 🚀 API accessible here: $NGROK_URL"
-
-          # Guardar URL como artefacto
-          echo $NGROK_URL > ngrok_url.txt
-
-      # 11. Guardar snapshot del cluster
+      # 9. Guardar snapshot del cluster
       - name: Save cluster snapshot
         run: |
           mkdir -p cluster_snapshot
@@ -108,22 +62,20 @@ jobs:
           kubectl get svc -A -o wide > cluster_snapshot/services.txt
           kubectl get deployments -A -o wide > cluster_snapshot/deployments.txt
 
-      # 12. Subir snapshot y URL como artefactos
+      # 10. Subir snapshot como artefactos
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
           name: cluster-info
-          path: |
-            cluster_snapshot/
-            ngrok_url.txt
+          path: cluster_snapshot/
 
-      # 13. Revisar pods y servicios en los logs
+      # 11. Revisar pods y servicios en los logs
       - name: Check deployments
         run: |
           kubectl get pods -A
           kubectl get svc -A
 
-      # 14. Generar PDF con todas las evidencias
+      # 12. Generar PDF con todas las evidencias
       - name: Generate Deployment Evidence PDF
         run: |
           cat <<EOF > evidence.md
@@ -143,14 +95,11 @@ jobs:
           \`\`\`
           $(cat cluster_snapshot/deployments.txt)
           \`\`\`
-
-          ## 4. URL pública de ngrok
-          $(cat ngrok_url.txt)
           EOF
 
           pandoc evidence.md -o deployment_evidence.pdf
 
-      # 15. Subir PDF como artefacto
+      # 13. Subir PDF como artefacto
       - name: Upload PDF Evidence
         uses: actions/upload-artifact@v4
         with:
