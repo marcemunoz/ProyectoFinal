@@ -13,30 +13,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ⬇️ Descargar artefacto del CI que acaba de terminar
-      - name: Download artifact
+      - name: Download CI artifact
         uses: actions/download-artifact@v4
         with:
           name: images
           run-id: ${{ github.event.workflow_run.id }}
 
-      # ⬇️ Extraer los .tar del ZIP
       - name: Unzip artifact
         run: unzip images.zip
 
-      # ⬇️ Cargar imágenes Docker
       - name: Load Docker images
         run: |
           docker load -i api.tar
           docker load -i worker.tar
 
-      # Instalar kubectl
       - name: Install kubectl
         run: |
           sudo apt-get update
           sudo apt-get install -y kubectl
 
-      # Instalar Kind
       - name: Install Kind
         run: |
           curl -Lo kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
