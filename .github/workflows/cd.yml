@@ -62,7 +62,7 @@ jobs:
           chmod +x ngrok
           sudo mv ngrok /usr/local/bin/ngrok
 
-      # 10. Exponer servicio API con ngrok y guardar URL
+      # 10. Exponer servicio API con ngrok y mostrar URL clickeable
       - name: Expose API service with ngrok
         run: |
           # Encuentra el NodePort del servicio
@@ -75,10 +75,12 @@ jobs:
 
           # Obtener URL pública de ngrok
           NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-          echo "API URL: $NGROK_URL"
-          
-          # Guardar URL en archivo para artefacto
+
+          # Guardar URL como artefacto
           echo $NGROK_URL > ngrok_url.txt
+
+          # Mostrar URL clickeable en logs
+          echo "🚀 API accessible here: $NGROK_URL"
 
       # 11. Guardar snapshot del cluster
       - name: Save cluster snapshot
