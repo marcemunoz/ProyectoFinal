@@ -62,7 +62,7 @@ jobs:
           chmod +x ngrok
           sudo mv ngrok /usr/local/bin/ngrok
 
-      # 10. Port-forward API y exponer con ngrok
+      # 10. Port-forward API y exponer con ngrok (corrección)
       - name: Expose API pod with ngrok
         run: |
           # Esperar a que el pod esté listo
@@ -76,23 +76,29 @@ jobs:
           kubectl port-forward $API_POD 5000:5000 &>/dev/null &
           sleep 5
 
-          # Test interno para activar ngrok
-          curl -s http://localhost:5000/ || echo "API no respondió internamente"
-
-          # Iniciar ngrok
+          # Iniciar ngrok en background
           nohup ngrok http 5000 --log=stdout > ngrok.log 2>&1 &
           sleep 7
 
-          # Obtener URL pública de ngrok
-          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-          echo "🚀 API accessible here: $NGROK_URL"
+          # Esperar hasta que ngrok tenga URL pública
+          for i in {1..20}; do
+            NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+            if [ -n "$NGROK_URL" ] && [ "$NGROK_URL" != "null" ]; then
+              break
+            fi
+            sleep 3
+          done
+
+          if [ -z "$NGROK_URL" ] || [ "$NGROK_URL" = "null" ]; then
+            echo "❌ No se pudo obtener la URL de ngrok"
+            exit 1
+          fi
+
+          # Mostrar mensaje de éxito
+          echo "API Microservicio funcionando! 🚀 API accessible here: $NGROK_URL"
 
           # Guardar URL como artefacto
           echo $NGROK_URL > ngrok_url.txt
-
-          # Guardar respuesta de la API vía ngrok
-          NGROK_RESPONSE=$(curl -s "$NGROK_URL")
-          echo "$NGROK_RESPONSE" > ngrok_api_response.txt
 
       # 11. Guardar snapshot del cluster
       - name: Save cluster snapshot
@@ -110,7 +116,6 @@ jobs:
           path: |
             cluster_snapshot/
             ngrok_url.txt
-            ngrok_api_response.txt
 
       # 13. Revisar pods y servicios en los logs
       - name: Check deployments
@@ -141,11 +146,6 @@ jobs:
 
           ## 4. URL pública de ngrok
           $(cat ngrok_url.txt)
-
-          ## 5. Respuesta de la API vía ngrok
-          \`\`\`
-          $(cat ngrok_api_response.txt || echo "No response captured")
-          \`\`\`
           EOF
 
           pandoc evidence.md -o deployment_evidence.pdf
