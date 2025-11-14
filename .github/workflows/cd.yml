@@ -41,9 +41,8 @@ jobs:
       # 5. Aplicar Deployments y Services
       - name: Aplicar manifiestos Kubernetes
         run: |
-          kubectl apply -f k8s/api-deployment.yaml
-          kubectl apply -f k8s/api-service.yaml
-          kubectl apply -f k8s/worker-deployment.yaml
+          kubectl apply -f k8s/
+        
 
       # 6. Esperar a que todos los pods estén listos
       - name: Esperar pods
