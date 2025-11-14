@@ -14,7 +14,7 @@ jobs:
       # 1. Descargar repositorio
       - uses: actions/checkout@v4
 
-      # 2. Login en Docker Hub (para poder usar las imágenes)
+      # 2. Login en Docker Hub
       - name: Login to DockerHub
         uses: docker/login-action@v3
         with:
@@ -54,7 +54,21 @@ jobs:
       - name: Apply Kubernetes manifests
         run: kubectl apply -f k8s/
 
-      # 9. Revisar pods y servicios
+      # 9. Guardar snapshot del cluster como artefacto
+      - name: Save cluster snapshot
+        run: |
+          mkdir -p cluster_snapshot
+          kubectl get pods -A -o wide > cluster_snapshot/pods.txt
+          kubectl get svc -A -o wide > cluster_snapshot/services.txt
+          kubectl get deployments -A -o wide > cluster_snapshot/deployments.txt
+
+      - name: Upload cluster snapshot
+        uses: actions/upload-artifact@v4
+        with:
+          name: cluster-snapshot
+          path: cluster_snapshot/
+
+      # 10. Revisar pods y servicios en los logs del workflow
       - name: Check deployments
         run: |
           kubectl get pods -A
