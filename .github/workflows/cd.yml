@@ -1,4 +1,4 @@
-name: CD - Deploy
+name: CD - Deploy Simulated
 
 on:
   workflow_run:
@@ -7,15 +7,54 @@ on:
       - completed
 
 jobs:
-  deploy:
+  deploy-simulated:
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
+      # ⬇️ Descargar artefacto del CI que acaba de terminar
+      - name: Download artifact
+        uses: actions/download-artifact@v4
         with:
           name: images
+          run-id: ${{ github.event.workflow_run.id }}
 
-      - name: Verify files
-        run: ls -l .
+      # ⬇️ Extraer los .tar del ZIP
+      - name: Unzip artifact
+        run: unzip images.zip
+
+      # ⬇️ Cargar imágenes Docker
+      - name: Load Docker images
+        run: |
+          docker load -i api.tar
+          docker load -i worker.tar
+
+      # Instalar kubectl
+      - name: Install kubectl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y kubectl
+
+      # Instalar Kind
+      - name: Install Kind
+        run: |
+          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
+          chmod +x kind
+          sudo mv kind /usr/local/bin/kind
+
+      - name: Create Kind cluster
+        run: kind create cluster --name demo
+
+      - name: Load images into Kind
+        run: |
+          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/api:latest --name demo
+          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest --name demo
+
+      - name: Apply Kubernetes manifests
+        run: kubectl apply -f k8s/
+
+      - name: Check deployments
+        run: |
+          kubectl get pods -A
+          kubectl get svc -A
