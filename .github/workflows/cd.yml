@@ -27,7 +27,7 @@ jobs:
 
       # Descomprimir ZIP
       - name: Unzip artifact
-        run: unzip images.zip
+        run: unzip images
 
       # Cargar imágenes
       - name: Load Docker images
