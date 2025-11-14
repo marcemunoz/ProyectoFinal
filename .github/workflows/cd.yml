@@ -1,4 +1,4 @@
-name: CD - Deploy Simulated with ngrok
+name: CD - Deploy Simulated with ngrok port-forward
 
 on:
   workflow_run:
@@ -62,25 +62,27 @@ jobs:
           chmod +x ngrok
           sudo mv ngrok /usr/local/bin/ngrok
 
-      # 10. Exponer servicio API con ngrok y mostrar URL clickeable
-      - name: Expose API service with ngrok
+      # 10. Port-forward API y exponer con ngrok
+      - name: Expose API pod with ngrok
         run: |
-          # Encuentra el NodePort del servicio
-          NODE_PORT=$(kubectl get svc api-service -o=jsonpath='{.spec.ports[0].nodePort}')
-          echo "API NodePort: $NODE_PORT"
+          # Encontrar pod de API
+          API_POD=$(kubectl get pods -l app=api -o jsonpath='{.items[0].metadata.name}')
+          echo "API Pod: $API_POD"
 
-          # Inicia ngrok en background
-          nohup ngrok http $NODE_PORT --log=stdout > ngrok.log 2>&1 &
+          # Port-forward del pod a localhost
+          kubectl port-forward $API_POD 5000:5000 &
+          sleep 3
+
+          # Iniciar ngrok apuntando a localhost:5000
+          nohup ngrok http 5000 --log=stdout > ngrok.log 2>&1 &
           sleep 5
 
           # Obtener URL pública de ngrok
           NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          echo "🚀 API accessible here: $NGROK_URL"
 
           # Guardar URL como artefacto
           echo $NGROK_URL > ngrok_url.txt
-
-          # Mostrar URL clickeable en logs
-          echo "🚀 API accessible here: $NGROK_URL"
 
       # 11. Guardar snapshot del cluster
       - name: Save cluster snapshot
