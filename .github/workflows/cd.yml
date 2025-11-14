@@ -1,4 +1,4 @@
-name: CD - Deploy Simulated with ngrok port-forward
+name: CD - Deploy with Evidence
 
 on:
   workflow_run:
@@ -7,102 +7,111 @@ on:
       - completed
 
 jobs:
-  deploy-simulated:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
-      # 1. Descargar repositorio
+      # 1. Checkout
       - uses: actions/checkout@v4
 
-      # 2. Login en Docker Hub
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      # 3. Instalar herramientas necesarias
-      - name: Install dependencies
+      # 2. Instalar kubectl
+      - name: Install kubectl
         run: |
           sudo apt-get update
-          sudo apt-get install -y kubectl unzip wget jq
+          sudo apt-get install -y kubectl
 
-      # 4. Instalar Kind
-      - name: Install Kind
+      # 3. Guardar kubeconfig
+      - name: Setup kubeconfig
         run: |
-          curl -Lo kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
-          chmod +x kind
-          sudo mv kind /usr/local/bin/kind
+          mkdir -p ~/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > ~/.kube/config
+          chmod 600 ~/.kube/config
 
-      # 5. Crear cluster Kind
-      - name: Create Kind cluster
-        run: kind create cluster --name demo
-
-      # 6. Pull de imágenes desde Docker Hub
-      - name: Pull Docker images
+      # 4. Desplegar
+      - name: Apply manifests
         run: |
-          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/api:latest
-          docker pull ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest
+          kubectl apply -f k8s/
+          kubectl rollout status deployment/api-deployment --timeout=120s
 
-      # 7. Cargar imágenes en Kind
-      - name: Load images into Kind
+      # 5. Obtener pod
+      - name: Get API pod
+        id: pod
         run: |
-          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/api:latest --name demo
-          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest --name demo
+          POD=$(kubectl get pods -l app=api -o jsonpath='{.items[0].metadata.name}')
+          echo "pod_name=$POD" >> $GITHUB_OUTPUT
+          echo "API Pod: $POD"
 
-      # 8. Aplicar manifests Kubernetes
-      - name: Apply Kubernetes manifests
-        run: kubectl apply -f k8s/
-
-      # 9. Instalar ngrok
+      # 6. Port-forward y ngrok
       - name: Install ngrok
         run: |
-          wget https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-linux-amd64.zip
-          unzip ngrok-stable-linux-amd64.zip
-          chmod +x ngrok
-          sudo mv ngrok /usr/local/bin/ngrok
+          curl -s https://ngrok-agent.s3.amazonaws.com/ngrok.asc | sudo tee /etc/apt/trusted.gpg.d/ngrok.asc >/dev/null
+          echo "deb https://ngrok-agent.s3.amazonaws.com buster main" | sudo tee /etc/apt/sources.list.d/ngrok.list
+          sudo apt update
+          sudo apt install -y ngrok
 
-      # 10. Port-forward API y exponer con ngrok
-      - name: Expose API pod with ngrok
+      - name: Start port-forward + ngrok
         run: |
-          # Encontrar pod de API
-          API_POD=$(kubectl get pods -l app=api -o jsonpath='{.items[0].metadata.name}')
-          echo "API Pod: $API_POD"
-
-          # Port-forward del pod a localhost
-          kubectl port-forward $API_POD 5000:5000 &
-          sleep 3
-
-          # Iniciar ngrok apuntando a localhost:5000
+          kubectl port-forward pod/${{ steps.pod.outputs.pod_name }} 5000:5000 >/dev/null 2>&1 &
+          sleep 4
           nohup ngrok http 5000 --log=stdout > ngrok.log 2>&1 &
-          sleep 5
+          sleep 6
 
-          # Obtener URL pública de ngrok
-          NGROK_URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
-          echo "🚀 API accessible here: $NGROK_URL"
+          URL=$(curl -s http://localhost:4040/api/tunnels | jq -r '.tunnels[0].public_url')
+          echo "ngrok_url=$URL" >> $GITHUB_OUTPUT
+          echo "🌐 Public URL: $URL"
 
-          # Guardar URL como artefacto
-          echo $NGROK_URL > ngrok_url.txt
-
-      # 11. Guardar snapshot del cluster
-      - name: Save cluster snapshot
+      # 7. Probar API real desplegada
+      - name: Test Public API
+        id: apitest
         run: |
-          mkdir -p cluster_snapshot
-          kubectl get pods -A -o wide > cluster_snapshot/pods.txt
-          kubectl get svc -A -o wide > cluster_snapshot/services.txt
-          kubectl get deployments -A -o wide > cluster_snapshot/deployments.txt
+          RESPONSE=$(curl -s ${{ steps.start_ngrok.outputs.ngrok_url }})
+          echo "response=$RESPONSE" >> $GITHUB_OUTPUT
+          echo "API Response: $RESPONSE"
 
-      # 12. Subir snapshot y URL como artefactos
-      - name: Upload artifacts
+      # 8. Crear reporte PDF
+      - name: Install pandoc
+        run: sudo apt-get install -y pandoc
+
+      - name: Generate Deployment Evidence PDF
+        run: |
+          cat <<EOF > evidence.md
+          # 🚀 Evidencia de Despliegue en Kubernetes
+
+          ## 📌 1. Pod desplegado
+          **Pod:** ${{ steps.pod.outputs.pod_name }}
+
+          ## 📌 2. Manifiestos aplicados
+          Archivos del directorio \`k8s/\` se aplicaron correctamente.
+
+          ## 📌 3. URL pública generada (ngrok)
+          **${{ steps.start_ngrok.outputs.ngrok_url }}**
+
+          ## 📌 4. Respuesta real de la API
+          \`\`\`json
+          ${{ steps.apitest.outputs.response }}
+          \`\`\`
+
+          ## 📌 5. Logs del pod
+          \`\`\`
+          $(kubectl logs ${{ steps.pod.outputs.pod_name }})
+          \`\`\`
+
+          ## 📌 6. Estado de pods
+          \`\`\`
+          $(kubectl get pods -o wide)
+          \`\`\`
+
+          ## 📌 7. Servicios activos
+          \`\`\`
+          $(kubectl get svc -o wide)
+          \`\`\`
+          EOF
+
+          pandoc evidence.md -o evidence.pdf
+
+      # 9. Guardar reporte como artefacto
+      - name: Upload Evidence
         uses: actions/upload-artifact@v4
         with:
-          name: cluster-info
-          path: |
-            cluster_snapshot/
-            ngrok_url.txt
-
-      # 13. Revisar pods y servicios en los logs
-      - name: Check deployments
-        run: |
-          kubectl get pods -A
-          kubectl get svc -A
+          name: deployment-evidence
+          path: evidence.pdf
