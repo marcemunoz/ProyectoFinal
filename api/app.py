@@ -10,7 +10,7 @@ def dashboard():
     <html lang="es">
     <head>
         <meta charset="UTF-8">
-        <title>Dashboard Dem</title>
+        <title>Dashboard Demo</title>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
         <style>
             body {
