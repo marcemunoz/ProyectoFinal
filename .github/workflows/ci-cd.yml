@@ -49,9 +49,9 @@ jobs:
       - name: Test API container
         run: |
           # Port-forward temporal para test
-          kubectl port-forward svc/api-service 8000:5000 &
+          kubectl port-forward deployment/api 5000 &
           sleep 5
-          curl -f http://localhost:8000/ || exit 1
+          curl -f http://localhost:5000/ || exit 1
 
       # 8️⃣ Push de imágenes a Docker Hub
       - name: Push API Image
