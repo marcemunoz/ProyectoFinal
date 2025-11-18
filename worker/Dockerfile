@@ -9,4 +9,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # No necesita puerto, solo corre procesos internos
-CMD ["python", "worker.py"]
+CMD ["python", "app.py"]
