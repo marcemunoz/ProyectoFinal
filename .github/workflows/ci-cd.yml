@@ -42,10 +42,8 @@ jobs:
       # 6️⃣ Deploy en Kubernetes
       - name: Deploy API & Worker
         run: |
-          kubectl apply -f k8s/api-deployment.yaml
-          kubectl apply -f k8s/worker-deployment.yaml
-          kubectl wait --for=condition=available --timeout=120s deployment/api-deployment
-          kubectl wait --for=condition=available --timeout=120s deployment/worker-deployment
+          kubectl apply -f k8s/
+          
 
       # 7️⃣ Test básico del API
       - name: Test API container
