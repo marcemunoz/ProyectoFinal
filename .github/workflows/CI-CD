@@ -1,0 +1,67 @@
+name: CI/CD - Build, Deploy & Test
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci-cd-kind:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1️⃣ Descargar el repositorio
+      - uses: actions/checkout@v4
+
+      # 2️⃣ Login a Docker Hub
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # 3️⃣ Construir imágenes Docker
+      - name: Build API Image
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/api:latest ./api
+
+      - name: Build Worker Image
+        run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest ./worker
+
+      # 4️⃣ Crear cluster Kind temporal
+      - name: Create Kind cluster
+        uses: container-tools/kind-action@v1
+        with:
+          cluster_name: ci-cd-cluster
+
+      # 5️⃣ Cargar las imágenes en el cluster
+      - name: Load images into Kind
+        run: |
+          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/api:latest --name ci-cd-cluster
+          kind load docker-image ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest --name ci-cd-cluster
+
+      # 6️⃣ Deploy en Kubernetes
+      - name: Deploy API & Worker
+        run: |
+          kubectl apply -f k8s/api-deployment.yaml
+          kubectl apply -f k8s/worker-deployment.yaml
+          kubectl wait --for=condition=available --timeout=120s deployment/api-deployment
+          kubectl wait --for=condition=available --timeout=120s deployment/worker-deployment
+
+      # 7️⃣ Test básico del API
+      - name: Test API container
+        run: |
+          # Port-forward temporal para test
+          kubectl port-forward svc/api-service 8000:5000 &
+          sleep 5
+          curl -f http://localhost:8000/ || exit 1
+
+      # 8️⃣ Push de imágenes a Docker Hub
+      - name: Push API Image
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/api:latest
+
+      - name: Push Worker Image
+        run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/worker:latest
+
+      # 9️⃣ Limpiar cluster (opcional)
+      - name: Delete Kind cluster
+        run: kind delete cluster --name ci-cd-cluster
