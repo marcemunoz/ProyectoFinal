@@ -30,8 +30,8 @@ jobs:
       # 4. Tests mínimos
       - name: Test API container
         run: |
-          # Usar puerto 8000
-          container_id=$(docker run -d -p 8000:8000 ${{ secrets.DOCKERHUB_USERNAME }}/api:latest)
+          # Mapear puerto interno 5000 a 8000 del host
+          container_id=$(docker run -d -p 8000:5000 ${{ secrets.DOCKERHUB_USERNAME }}/api:latest)
           sleep 5
           curl -f http://localhost:8000/ || (docker logs $container_id && exit 1)
           docker stop $container_id
