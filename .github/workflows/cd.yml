@@ -1,0 +1,78 @@
+name: CD - Deploy to Kind
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Instalar Kind y kubectl
+        run: |
+          sudo curl -Lo /usr/local/bin/kind https://kind.sigs.k8s.io/dl/v0.22.0/kind-linux-amd64
+          sudo chmod +x /usr/local/bin/kind
+          sudo curl -Lo /usr/local/bin/kubectl https://dl.k8s.io/release/v1.29.0/bin/linux/amd64/kubectl
+          sudo chmod +x /usr/local/bin/kubectl
+
+      - name: Crear cluster Kind
+        run: kind create cluster --name proyectofinal
+
+      - name: Cargar imágenes API y Worker
+        run: |
+          docker pull marcemo123/api:latest
+          docker pull marcemo123/worker:latest
+          kind load docker-image marcemo123/api:latest --name proyectofinal
+          kind load docker-image marcemo123/worker:latest --name proyectofinal
+
+      - name: Aplicar manifiestos Kubernetes
+        run: |
+          kubectl apply -f k8s/
+          
+
+      - name: Capturar evidencias del cluster
+        run: |
+          mkdir -p cluster_snapshot
+          kubectl get pods -o wide > cluster_snapshot/pods.txt
+          kubectl get svc -o wide > cluster_snapshot/services.txt
+          kubectl get deployments -o wide > cluster_snapshot/deployments.txt
+          kubectl describe pod -l app=api > cluster_snapshot/api_describe.txt
+          kubectl describe pod -l app=worker > cluster_snapshot/worker_describe.txt
+
+      - name: Instalar weasyprint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y weasyprint
+
+      - name: Crear PDF con evidencias
+        run: |
+          cat <<EOF > evidence.html
+          <h1 style="font-family: sans-serif;">🚀 Evidencia de Despliegue</h1>
+
+          <h2>1. Pods</h2>
+          <pre>$(cat cluster_snapshot/pods.txt)</pre>
+
+          <h2>2. Servicios</h2>
+          <pre>$(cat cluster_snapshot/services.txt)</pre>
+
+          <h2>3. Deployments</h2>
+          <pre>$(cat cluster_snapshot/deployments.txt)</pre>
+
+          <h2>4. API - Describe</h2>
+          <pre>$(cat cluster_snapshot/api_describe.txt)</pre>
+
+          <h2>5. Worker - Describe</h2>
+          <pre>$(cat cluster_snapshot/worker_describe.txt)</pre>
+          EOF
+
+          weasyprint evidence.html deployment_evidence.pdf
+
+      - name: Subir PDF
+        uses: actions/upload-artifact@v4
+        with:
+          name: evidencia-despliegue
+          path: deployment_evidence.pdf
